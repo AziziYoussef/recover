@@ -17,39 +17,47 @@ export async function GET(request: NextRequest) {
     const size = searchParams.get('size') || '10';
     
     // Build the API URL with query parameters
-    let url = `${API_BASE_URL}/api/items/public?page=${page}&size=${size}`;
+    let url = `${API_BASE_URL}/api/items?page=${page}&size=${size}`;
     if (query) url += `&query=${encodeURIComponent(query)}`;
     if (category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
 
+    console.log(`Fetching from backend URL: ${url}`);
+    
     // Fetch data from Spring Boot backend
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
       },
+      cache: 'no-store'
     });
 
     if (!response.ok) {
-      throw new Error(`API responded with status: ${response.status}`);
+      console.error(`API responded with status: ${response.status}`);
+      return NextResponse.json(
+        { error: `API responded with status: ${response.status}` },
+        { status: 500 }
+      );
     }
 
     const data = await response.json();
-
+    console.log('Data received from backend:', data);
+    
     // Transform the data to match the frontend format
     const transformedData = {
-      objects: data.content.map((item: any) => ({
+      objects: data.items.map((item: any) => ({
         id: item.id,
         name: item.name || 'Unnamed Item',
         location: item.location || 'Unknown Location',
-        date: item.detectionDate ? new Date(item.detectionDate).toISOString().split('T')[0] : 'Unknown Date',
-        time: item.detectionDate ? new Date(item.detectionDate).toTimeString().split(' ')[0] : 'Unknown Time',
+        date: item.reportedAt ? new Date(item.reportedAt).toISOString().split('T')[0] : 'Unknown Date',
+        time: item.reportedAt ? new Date(item.reportedAt).toTimeString().split(' ')[0] : 'Unknown Time',
         image: item.imageUrl || '/placeholder.svg',
         category: item.category?.toLowerCase() || 'other',
         description: item.description,
         status: item.status,
       })),
-      totalItems: data.totalElements,
+      totalItems: data.totalItems,
       totalPages: data.totalPages,
-      currentPage: data.number,
+      currentPage: data.currentPage,
     };
     
     return NextResponse.json(transformedData);

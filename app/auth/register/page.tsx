@@ -15,14 +15,12 @@ import { Loader2 } from "lucide-react"
 
 // Form validation schema
 const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  firstName: z.string().min(2, "First name must be at least 2 characters"),
+  lastName: z.string().min(2, "Last name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  contactInformation: z.string().optional(),
-})
-.refine(data => data.name.trim().length > 0, {
-  message: "Name cannot be empty",
-  path: ["name"],
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  phone: z.string().optional(),
 })
 
 type RegisterFormValues = z.infer<typeof registerSchema>
@@ -36,10 +34,12 @@ export default function RegisterPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      name: "",
+      username: "",
+      firstName: "",
+      lastName: "",
       email: "",
       password: "",
-      contactInformation: "",
+      phone: "",
     },
   })
 
@@ -51,7 +51,8 @@ export default function RegisterPage() {
     try {
       console.log("Attempting to register:", data.email);
       
-      const response = await fetch("/api/auth/register", {
+      const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
+      const response = await fetch(`${BACKEND_URL}/api/auth/signup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -59,19 +60,14 @@ export default function RegisterPage() {
         body: JSON.stringify(data),
       })
 
-      const result = await response.json()
-
       if (!response.ok) {
-        // Show existing account message for test@example.com
-        if (data.email === "test@example.com") {
-          setError("This email is already in use. Please try another email or sign in.")
-        } else {
-          setError(result.error || "Registration failed")
-        }
+        const result = await response.json()
+        setError(result.message || "Registration failed")
         setLoading(false)
         return
       }
 
+      const result = await response.json()
       setSuccess(true)
       
       // Redirect to sign in page after short delay
@@ -79,7 +75,7 @@ export default function RegisterPage() {
         router.push("/auth/signin")
       }, 2000)
     } catch (err) {
-      setError("An error occurred during registration")
+      setError("An error occurred during registration. Please make sure the backend server is running.")
       setLoading(false)
     }
   }
@@ -94,7 +90,7 @@ export default function RegisterPage() {
           {/* Development mode notice */}
           <Alert className="mt-6 bg-blue-50 border-blue-200">
             <AlertDescription className="text-blue-700">
-              Development Mode: Try any email except <strong>test@example.com</strong> which is already registered
+              Make sure the Spring Boot backend is running on port 8080 before registering
             </AlertDescription>
           </Alert>
         </div>
@@ -121,15 +117,41 @@ export default function RegisterPage() {
               )}
               
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="username">Username</Label>
                 <Input 
-                  id="name" 
-                  placeholder="John Doe" 
-                  {...register("name")}
+                  id="username" 
+                  placeholder="johndoe" 
+                  {...register("username")}
                 />
-                {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message}</p>
+                {errors.username && (
+                  <p className="text-sm text-destructive">{errors.username.message}</p>
                 )}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input 
+                    id="firstName" 
+                    placeholder="John" 
+                    {...register("firstName")}
+                  />
+                  {errors.firstName && (
+                    <p className="text-sm text-destructive">{errors.firstName.message}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input 
+                    id="lastName" 
+                    placeholder="Doe" 
+                    {...register("lastName")}
+                  />
+                  {errors.lastName && (
+                    <p className="text-sm text-destructive">{errors.lastName.message}</p>
+                  )}
+                </div>
               </div>
               
               <div className="space-y-2">
@@ -159,14 +181,14 @@ export default function RegisterPage() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="contactInformation">Contact Information (Optional)</Label>
+                <Label htmlFor="phone">Phone (Optional)</Label>
                 <Input 
-                  id="contactInformation" 
-                  placeholder="Phone number or other contact info" 
-                  {...register("contactInformation")}
+                  id="phone" 
+                  placeholder="+1 234 567 8900" 
+                  {...register("phone")}
                 />
-                {errors.contactInformation && (
-                  <p className="text-sm text-destructive">{errors.contactInformation.message}</p>
+                {errors.phone && (
+                  <p className="text-sm text-destructive">{errors.phone.message}</p>
                 )}
               </div>
             </CardContent>

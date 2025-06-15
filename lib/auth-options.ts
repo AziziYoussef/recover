@@ -1,13 +1,14 @@
 import { AuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { JWT } from "next-auth/jwt"
-import bcrypt from "bcryptjs"
 
 // Add custom types to extend NextAuth types
 declare module "next-auth" {
   interface User {
     id: string
     role?: string
+    roles?: string[]
+    accessToken?: string
   }
   
   interface Session {
@@ -17,7 +18,9 @@ declare module "next-auth" {
       email?: string | null
       image?: string | null
       role?: string
+      roles?: string[]
     }
+    accessToken?: string
   }
 }
 
@@ -25,28 +28,13 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string
     role?: string
+    roles?: string[]
+    accessToken?: string
   }
 }
 
-// Mock user database for development
-const MOCK_USERS = [
-  {
-    id: "user-1",
-    name: "Test User",
-    email: "test@example.com",
-    password: bcrypt.hashSync("password123", 10),
-    role: "user"
-  },
-  {
-    id: "admin-1",
-    name: "Admin User",
-    email: "admin@example.com",
-    password: bcrypt.hashSync("admin123", 10),
-    role: "admin"
-  }
-];
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
 
-// This is a simplified version of the auth options with mock functionality
 export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
@@ -61,32 +49,41 @@ export const authOptions: AuthOptions = {
         }
 
         try {
-          // For development, use mock user database
-          const user = MOCK_USERS.find(u => u.email === credentials.email);
-          
-          if (!user) {
-            console.log("User not found");
-            return null;
+          // Call Spring Boot backend for authentication
+          const response = await fetch(`${BACKEND_URL}/api/auth/signin`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              username: credentials.email, // Backend expects username but we'll use email
+              password: credentials.password,
+            }),
+          })
+
+          if (!response.ok) {
+            console.log('Authentication failed:', response.status)
+            return null
           }
-          
-          // Verify password
-          const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
-          
-          if (!isPasswordValid) {
-            console.log("Invalid password");
-            return null;
+
+          const data = await response.json()
+
+          if (data.token) {
+            return {
+              id: data.id.toString(),
+              name: data.username,
+              email: data.email,
+              role: data.roles?.[0]?.replace('ROLE_', '').toLowerCase() || 'user',
+              roles: data.roles || [],
+              accessToken: data.token,
+              image: null
+            }
           }
-          
-          return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            image: null
-          };
+
+          return null
         } catch (error) {
-          console.error("Auth error:", error);
-          return null;
+          console.error('Auth error:', error)
+          return null
         }
       },
     }),
@@ -103,6 +100,8 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.id = user.id
         token.role = user.role
+        token.roles = user.roles
+        token.accessToken = user.accessToken
       }
       return token
     },
@@ -110,11 +109,12 @@ export const authOptions: AuthOptions = {
       if (session.user) {
         session.user.id = token.id
         session.user.role = token.role
+        session.user.roles = token.roles
       }
+      session.accessToken = token.accessToken
       return session
     },
   },
-  // This is a development secret and should be replaced in production
   secret: process.env.NEXTAUTH_SECRET || "ThisIsATemporarySecretForDevelopmentOnly",
   debug: process.env.NODE_ENV === "development",
 } 

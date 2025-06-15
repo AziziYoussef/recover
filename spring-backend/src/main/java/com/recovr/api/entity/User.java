@@ -39,6 +39,10 @@ public class User {
     @Size(max = 120)
     private String password;
 
+    @Size(max = 100)
+    @Column(name = "full_name")
+    private String fullName;
+
     @Column(name = "first_name")
     private String firstName;
 
@@ -66,10 +70,26 @@ public class User {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        generateFullName();
     }
 
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+        generateFullName();
+    }
+    
+    private void generateFullName() {
+        if (fullName == null || fullName.trim().isEmpty()) {
+            if (firstName != null && lastName != null) {
+                fullName = firstName.trim() + " " + lastName.trim();
+            } else if (firstName != null) {
+                fullName = firstName.trim();
+            } else if (lastName != null) {
+                fullName = lastName.trim();
+            } else {
+                fullName = username != null ? username : "";
+            }
+        }
     }
 } 

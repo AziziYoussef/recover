@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(originPatterns = {"http://localhost:*", "http://127.0.0.1:*"}, allowCredentials = "true")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -48,8 +48,21 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+        // Support login with email or username
+        String usernameOrEmail = loginRequest.getUsername();
+        
+        // Check if it's an email address
+        if (usernameOrEmail.contains("@")) {
+            // Find user by email and use their username for authentication
+            User user = userRepository.findByEmail(usernameOrEmail)
+                    .orElse(null);
+            if (user != null) {
+                usernameOrEmail = user.getUsername();
+            }
+        }
+        
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+                new UsernamePasswordAuthenticationToken(usernameOrEmail, loginRequest.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String jwt = jwtUtils.generateJwtToken(authentication);
@@ -91,8 +104,7 @@ public class AuthController {
         user.setFirstName(signUpRequest.getFirstName());
         user.setLastName(signUpRequest.getLastName());
         user.setPhone(signUpRequest.getPhone());
-        user.setCreatedAt(LocalDateTime.now());
-        user.setUpdatedAt(LocalDateTime.now());
+        // fullName, createdAt, and updatedAt will be set automatically by @PrePersist
 
         Set<Role> roles = new HashSet<>();
 
@@ -122,5 +134,10 @@ public class AuthController {
         userRepository.save(user);
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+    }
+
+    @GetMapping("/test")
+    public ResponseEntity<?> testCors() {
+        return ResponseEntity.ok(new MessageResponse("CORS is working!"));
     }
 }

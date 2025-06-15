@@ -86,7 +86,7 @@ export default function SignInPage() {
           {/* Development mode notice */}
           <Alert className="mt-6 bg-blue-50 border-blue-200">
             <AlertDescription className="text-blue-700">
-              Development Mode: Use <strong>test@example.com / password123</strong> to login
+              Use <strong>admin@recovr.com / admin123</strong> for admin access or register a new account
             </AlertDescription>
           </Alert>
         </div>

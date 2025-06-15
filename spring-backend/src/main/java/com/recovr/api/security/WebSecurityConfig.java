@@ -21,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
 
@@ -106,6 +107,9 @@ public class WebSecurityConfig {
                 // File upload - require authentication
                 .requestMatchers(HttpMethod.POST, "/api/files/**").authenticated()
                 
+                // Matching service - internal use only
+                .requestMatchers("/api/matching/**").permitAll()
+                
                 // All other requests require authentication
                 .anyRequest().authenticated()
             );
@@ -140,5 +144,10 @@ public class WebSecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
     }
 }

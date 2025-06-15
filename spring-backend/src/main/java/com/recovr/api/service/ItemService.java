@@ -48,6 +48,19 @@ public class ItemService {
         return convertToDto(item);
     }
 
+    public java.util.List<ItemDto> getItemsByStatus(String status) {
+        try {
+            ItemStatus statusEnum = ItemStatus.valueOf(status.toUpperCase());
+            return itemRepository.findByStatus(statusEnum)
+                    .stream()
+                    .map(this::convertToDto)
+                    .collect(java.util.stream.Collectors.toList());
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid status value: {}", status);
+            throw new IllegalArgumentException("Invalid status: " + status);
+        }
+    }
+
     @Transactional
     public ItemDto createItem(ItemDto itemDto, User user) {
         Item item = new Item();

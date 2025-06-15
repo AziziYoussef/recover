@@ -73,9 +73,7 @@ export async function GET(request: NextRequest) {
 // POST /api/lost-objects
 export async function POST(request: Request) {
   try {
-    await connectToDatabase()
-    
-    // Get session or use mock user if session is not available
+    // Get session for authentication
     let session = null
     try {
       session = await getServerSession(authOptions)
@@ -83,67 +81,54 @@ export async function POST(request: Request) {
       console.warn("Session error:", err)
     }
     
-    // Create a mock session for development if needed
-    if (!session && process.env.NODE_ENV === 'development') {
-      console.warn("Using mock session for development")
-      session = {
-        user: {
-          id: 'mock-user-id',
-          email: 'mock@example.com',
-          name: 'Mock User'
-        }
-      }
-    }
-    
-    // Check authentication in production
-    if (!session && process.env.NODE_ENV === 'production') {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      )
-    }
-    
     const data = await request.json()
-
+    
     // Validate required fields
-    if (!data.name || !data.location || !data.category || !data.image) {
+    if (!data.name || !data.location || !data.category) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       )
     }
 
-    let newObject
-    try {
-      // Create new object with user reference
-      newObject = await LostObject.create({
-        ...data,
-        reporter: session?.user?.id || 'anonymous',
-        date: data.date || new Date(),
-        time: data.time || new Date().toTimeString().split(" ")[0].substring(0, 5),
-        status: "found"
-      })
-    } catch (err) {
-      console.warn("Error creating document in database:", err)
-      
-      // Create a mock response for development
-      if (process.env.NODE_ENV === 'development') {
-        newObject = {
-          _id: `mock-${Date.now()}`,
-          ...data,
-          reporter: session?.user?.id || 'anonymous',
-          date: data.date || new Date(),
-          time: data.time || new Date().toTimeString().split(" ")[0].substring(0, 5),
-          status: "found",
-          createdAt: new Date()
-        }
-      } else {
-        throw err
-      }
+    // Transform frontend data to backend format
+    const backendData = {
+      name: data.name,
+      description: data.description || '',
+      category: mapCategoryToBackend(data.category),
+      type: 'FOUND', // Default to FOUND for reports
+      status: 'FOUND',
+      location: data.location,
+      imageUrl: data.image || null
     }
 
+    console.log('Forwarding to Spring Boot backend:', backendData)
+
+    // Forward to Spring Boot backend
+    const backendResponse = await fetch(`${API_BASE_URL}/api/items`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Add JWT token if available
+        ...(session?.accessToken && { 'Authorization': `Bearer ${session.accessToken}` })
+      },
+      body: JSON.stringify(backendData)
+    })
+
+    if (!backendResponse.ok) {
+      const errorText = await backendResponse.text()
+      console.error(`Backend responded with status: ${backendResponse.status}`, errorText)
+      return NextResponse.json(
+        { error: `Failed to create item: ${errorText}` },
+        { status: backendResponse.status }
+      )
+    }
+
+    const backendResult = await backendResponse.json()
+    console.log('Backend response:', backendResult)
+
     return NextResponse.json(
-      { message: "Object reported successfully", object: newObject },
+      { message: "Object reported successfully", object: backendResult },
       { status: 201 }
     )
   } catch (error) {
@@ -153,4 +138,18 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+// Helper function to map frontend categories to backend enums
+function mapCategoryToBackend(frontendCategory: string): string {
+  const categoryMap: { [key: string]: string } = {
+    'bag': 'BAGS',
+    'electronics': 'ELECTRONICS', 
+    'accessory': 'ACCESSORIES',
+    'clothing': 'CLOTHING',
+    'document': 'DOCUMENTS',
+    'other': 'MISCELLANEOUS'
+  }
+  
+  return categoryMap[frontendCategory?.toLowerCase()] || 'MISCELLANEOUS'
 }

@@ -28,4 +28,6 @@ public interface ItemRepository extends JpaRepository<Item, Long>, JpaSpecificat
     long countByStatus(ItemStatus status);
     
     long countByCategory(ItemCategory category);
+    
+    List<Item> findByStatus(ItemStatus status);
 } 

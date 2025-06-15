@@ -9,6 +9,10 @@ import com.recovr.api.security.services.UserDetailsImpl;
 import com.recovr.api.service.ItemService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,6 +39,9 @@ public class ItemController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RestTemplate restTemplate;
 
     @GetMapping
     public ResponseEntity<?> getAllItems(
@@ -85,6 +92,12 @@ public class ItemController {
                 log.info("Creating item anonymously (no authenticated user)");
             }
             ItemDto createdItem = itemService.createItem(itemDto, user);
+            
+            // Trigger matching service if the item has an image
+            if (createdItem.getImageUrl() != null && !createdItem.getImageUrl().trim().isEmpty()) {
+                triggerMatchingService(createdItem.getId());
+            }
+            
             return new ResponseEntity<>(createdItem, HttpStatus.CREATED);
         } catch (Exception e) {
             log.error("Error in createItem: ", e);
@@ -138,6 +151,20 @@ public class ItemController {
             return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
         } catch (Exception e) {
             return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private void triggerMatchingService(Long itemId) {
+        try {
+            String matchingUrl = "http://localhost:8080/api/matching/process-item/" + itemId;
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Content-Type", "application/json");
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            
+            restTemplate.exchange(matchingUrl, HttpMethod.POST, entity, String.class);
+            log.info("Triggered matching service for item ID: {}", itemId);
+        } catch (Exception e) {
+            log.warn("Failed to trigger matching service for item ID {}: {}", itemId, e.getMessage());
         }
     }
 } 

@@ -82,48 +82,66 @@ export default function SearchPage() {
   }
 
   const handleImageSearch = async () => {
-    if (!uploadedImage) return
+    console.log("Starting image search...", { uploadedImage: !!uploadedImage })
+    
+    if (!uploadedImage) {
+      setError("Aucune image sélectionnée")
+      return
+    }
 
     setLoading(true)
     setError(null)
+    setResults([]) // Clear previous results
 
     try {
-      // First, get image features using the detection service
+      console.log("Preparing to upload image for search...")
+      
+      // Upload image directly to the backend matching service
       const formData = new FormData()
       formData.append("image", uploadedImage)
 
-      const featuresResponse = await fetch("/api/detection/features", {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const url = `${API_BASE_URL}/api/matching/search-by-image`;
+      
+      console.log("Making request to:", url)
+      
+      const response = await fetch(url, {
         method: "POST",
         body: formData
       })
-
-      if (!featuresResponse.ok) {
-        throw new Error("Failed to extract image features")
+      
+      console.log("Response status:", response.status)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Server response:", errorText)
+        throw new Error(`Server error: ${response.status} - ${errorText}`)
       }
       
-      const { features } = await featuresResponse.json()
-
-      // Then, search using the features
-      const searchResponse = await fetch("/api/search/image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          features,
-          minScore: 0.7 // Minimum similarity score
-        })
-      })
+      const data = await response.json()
+      console.log("Search results received:", data)
       
-      if (!searchResponse.ok) {
-        throw new Error("Failed to search with image")
+      // Transform the matches to the expected format
+      const transformedResults = data.matches ? data.matches.map((match: any) => ({
+        id: match.itemId.toString(),
+        name: match.itemName,
+        location: match.location,
+        date: match.reportedAt ? new Date(match.reportedAt).toISOString().split('T')[0] : 'Unknown Date',
+        image: match.itemImageUrl || '/placeholder.svg',
+        matchScore: match.confidence / 100, // Convert to 0-1 scale
+        category: match.category?.toLowerCase() || 'other'
+      })) : []
+      
+      console.log("Transformed results:", transformedResults)
+      setResults(transformedResults)
+      
+      if (transformedResults.length === 0) {
+        setError("Aucun objet correspondant trouvé")
       }
       
-      const data = await searchResponse.json()
-      setResults(data.results)
     } catch (err) {
       console.error("Error searching with image:", err)
-      setError("Failed to search with image. Please try again.")
+      setError(`Erreur lors de la recherche: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     } finally {
       setLoading(false)
     }
@@ -187,24 +205,35 @@ export default function SearchPage() {
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                <div
-                  {...getRootProps()}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                    isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25"
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  {imagePreview ? (
-                <div className="space-y-4">
-                      <div className="relative h-48 w-full">
-                        <Image
-                          src={imagePreview}
-                          alt="Preview"
-                          fill
-                          className="object-contain rounded-lg"
-                        />
-                      </div>
-                      <Button onClick={handleImageSearch} disabled={loading}>
+                {imagePreview ? (
+                  // Image uploaded - show preview and search button
+                  <div className="space-y-4">
+                    <div className="relative h-48 w-full border-2 border-solid border-gray-200 rounded-lg">
+                      <Image
+                        src={imagePreview}
+                        alt="Preview"
+                        fill
+                        className="object-contain rounded-lg"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={() => {
+                          setUploadedImage(null)
+                          setImagePreview(null)
+                          setResults([])
+                        }}
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={handleImageSearch} 
+                        disabled={loading}
+                        className="flex-1"
+                      >
                         {loading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
@@ -212,8 +241,27 @@ export default function SearchPage() {
                         )}
                         <span className="ml-2">Rechercher</span>
                       </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setUploadedImage(null)
+                          setImagePreview(null)
+                          setResults([])
+                        }}
+                      >
+                        Changer d'image
+                      </Button>
                     </div>
-                  ) : (
+                  </div>
+                ) : (
+                  // No image - show dropzone
+                  <div
+                    {...getRootProps()}
+                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                      isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25"
+                    }`}
+                  >
+                    <input {...getInputProps()} />
                     <div className="space-y-4">
                       <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                         <Upload className="h-6 w-6 text-primary" />
@@ -225,10 +273,10 @@ export default function SearchPage() {
                         <p className="text-sm text-muted-foreground mt-1">
                           Formats acceptés: JPG, JPEG, PNG
                         </p>
+                      </div>
+                    </div>
                   </div>
-                  </div>
-                  )}
-              </div>
+                )}
             </CardContent>
           </Card>
         </TabsContent>

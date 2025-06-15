@@ -44,17 +44,31 @@ export async function GET(request: NextRequest) {
     
     // Transform the data to match the frontend format
     const transformedData = {
-      objects: data.items.map((item: any) => ({
-        id: item.id,
-        name: item.name || 'Unnamed Item',
-        location: item.location || 'Unknown Location',
-        date: item.reportedAt ? new Date(item.reportedAt).toISOString().split('T')[0] : 'Unknown Date',
-        time: item.reportedAt ? new Date(item.reportedAt).toTimeString().split(' ')[0] : 'Unknown Time',
-        image: item.imageUrl || '/placeholder.svg',
-        category: item.category?.toLowerCase() || 'other',
-        description: item.description,
-        status: item.status,
-      })),
+      objects: data.items.map((item: any) => {
+        // Fix image URL to ensure it's properly accessible
+        let imageUrl = item.imageUrl || '/placeholder.svg';
+        
+        // If the image URL starts with /uploads/, make sure it's accessible
+        if (imageUrl.startsWith('/uploads/')) {
+          // Image should be accessible from public directory
+          imageUrl = imageUrl;
+        } else if (imageUrl.startsWith('/mock-image-')) {
+          // Replace mock images with placeholder
+          imageUrl = '/placeholder.svg';
+        }
+        
+        return {
+          id: item.id,
+          name: item.name || 'Unnamed Item',
+          location: item.location || 'Unknown Location',
+          date: item.reportedAt ? new Date(item.reportedAt).toISOString().split('T')[0] : 'Unknown Date',
+          time: item.reportedAt ? new Date(item.reportedAt).toTimeString().split(' ')[0] : 'Unknown Time',
+          image: imageUrl,
+          category: item.category?.toLowerCase() || 'other',
+          description: item.description,
+          status: item.status,
+        };
+      }),
       totalItems: data.totalItems,
       totalPages: data.totalPages,
       currentPage: data.currentPage,

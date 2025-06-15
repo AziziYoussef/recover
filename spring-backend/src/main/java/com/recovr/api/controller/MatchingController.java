@@ -22,11 +22,14 @@ import org.springframework.web.bind.annotation.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/matching")
@@ -42,6 +45,77 @@ public class MatchingController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @PostMapping("/search-by-image")
+    public ResponseEntity<?> searchByImage(@RequestParam("image") MultipartFile image) {
+        log.info("Processing image search with uploaded file");
+        
+        try {
+            // Validate image file
+            if (image.isEmpty()) {
+                return ResponseEntity.badRequest().body(new MessageResponse("No image file provided"));
+            }
+            
+            if (!image.getContentType().startsWith("image/")) {
+                return ResponseEntity.badRequest().body(new MessageResponse("File must be an image"));
+            }
+
+            // Save uploaded image temporarily
+            String tempImagePath = saveTemporaryImage(image);
+            if (tempImagePath == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(new MessageResponse("Failed to save uploaded image"));
+            }
+            
+            log.info("Saved uploaded image to: {}", tempImagePath);
+
+            // Get all FOUND items from database for comparison
+            List<ItemDto> foundItems = itemService.getItemsByStatus("FOUND");
+            log.info("Found {} found items in database for matching", foundItems.size());
+
+            if (foundItems.isEmpty()) {
+                cleanup(tempImagePath);
+                return ResponseEntity.ok(Map.of(
+                    "message", "No found items available for matching",
+                    "matches", Collections.emptyList()
+                ));
+            }
+
+            // Filter items with images only
+            List<ItemDto> foundItemsWithImages = foundItems.stream()
+                    .filter(item -> item.getImageUrl() != null && !item.getImageUrl().isEmpty())
+                    .collect(Collectors.toList());
+
+            if (foundItemsWithImages.isEmpty()) {
+                cleanup(tempImagePath);
+                return ResponseEntity.ok(Map.of(
+                    "message", "No found items with images available for matching",
+                    "matches", Collections.emptyList()
+                ));
+            }
+
+            log.info("Processing image matching against {} found items with images", foundItemsWithImages.size());
+
+            // Perform image matching
+            List<SearchMatchResult> matchResults = performImageSearch(tempImagePath, foundItemsWithImages);
+
+            // Clean up temporary file
+            cleanup(tempImagePath);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Image search completed successfully");
+            response.put("foundItemsChecked", foundItemsWithImages.size());
+            response.put("matchesFound", matchResults.size());
+            response.put("matches", matchResults);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error processing image search: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new MessageResponse("Error processing image search: " + e.getMessage()));
+        }
+    }
 
     @PostMapping("/process-item/{itemId}")
     public ResponseEntity<?> processItemMatching(@PathVariable Long itemId) {
@@ -160,9 +234,9 @@ public class MatchingController {
     private List<ImageMatchResult> callPythonMatchingService(String userImagePath, List<String> dbImagePaths) throws Exception {
         List<ImageMatchResult> results = new ArrayList<>();
         
-        // Build Python command
+        // Build Python command using virtual environment
         List<String> command = new ArrayList<>();
-        command.add("python3");
+        command.add("../matching-service/venv/bin/python");
         command.add("../matching-service/image_matcher_api.py");
         command.add(userImagePath);
         command.addAll(dbImagePaths);
@@ -180,18 +254,24 @@ public class MatchingController {
             while ((line = reader.readLine()) != null) {
                 log.info("Python output: {}", line);
                 
-                // Parse results line (format: "image_path:match_count")
-                if (line.contains(":") && !line.startsWith("Comparing") && !line.startsWith("Erreur")) {
+                // Parse results line (format: "image_path:match_count matches (confidence: xx%)")
+                if (line.contains(":") && line.contains("matches") && !line.startsWith("Comparing") && !line.startsWith("Processing")) {
                     String[] parts = line.split(":");
                     if (parts.length == 2) {
                         try {
                             String imagePath = parts[0].trim();
-                            int matchCount = Integer.parseInt(parts[1].trim().split(" ")[0]);
-                            
-                            ImageMatchResult result = new ImageMatchResult();
-                            result.imagePath = imagePath;
-                            result.matchCount = matchCount;
-                            results.add(result);
+                            String matchPart = parts[1].trim();
+                            // Extract match count from "42 matches (confidence: 71.3%)"
+                            String[] matchWords = matchPart.split(" ");
+                            if (matchWords.length >= 2) {
+                                int matchCount = Integer.parseInt(matchWords[0]);
+                                
+                                ImageMatchResult result = new ImageMatchResult();
+                                result.imagePath = imagePath;
+                                result.matchCount = matchCount;
+                                results.add(result);
+                                log.info("Parsed match result: {} -> {} matches", imagePath, matchCount);
+                            }
                         } catch (NumberFormatException e) {
                             log.warn("Could not parse match count from line: {}", line);
                         }
@@ -250,27 +330,39 @@ public class MatchingController {
 
         try {
             // Convert URL to local file path
-            // Assuming images are stored in uploads directory
             String fileName = imageUrl.substring(imageUrl.lastIndexOf("/") + 1);
-            Path imagePath = Paths.get("uploads", fileName);
             
-            if (Files.exists(imagePath)) {
-                return imagePath.toAbsolutePath().toString();
+            // List of possible paths to check
+            String[] possiblePaths = {
+                // Public uploads directory (relative to spring-backend) - MOST LIKELY
+                "../public/uploads/" + fileName,
+                // Current directory uploads (spring-backend/uploads)
+                "uploads/" + fileName,
+                // Parent directory uploads 
+                "../uploads/" + fileName,
+                // Absolute path to public uploads
+                System.getProperty("user.dir") + "/../public/uploads/" + fileName,
+                // Try with absolute project root
+                System.getProperty("user.dir").replace("/spring-backend", "") + "/public/uploads/" + fileName,
+                // Spring backend uploads
+                "spring-backend/uploads/" + fileName
+            };
+            
+            for (String pathStr : possiblePaths) {
+                Path imagePath = Paths.get(pathStr);
+                if (Files.exists(imagePath)) {
+                    String absolutePath = imagePath.toAbsolutePath().toString();
+                    log.info("Found image at path: {}", absolutePath);
+                    return absolutePath;
+                }
             }
 
-            // Try alternative paths
-            Path altPath = Paths.get("../uploads", fileName);
-            if (Files.exists(altPath)) {
-                return altPath.toAbsolutePath().toString();
+            // If no file found, log all attempted paths for debugging
+            log.warn("Image file not found for URL: {}. Attempted paths:", imageUrl);
+            for (String pathStr : possiblePaths) {
+                log.warn("  - {}", Paths.get(pathStr).toAbsolutePath().toString());
             }
-
-            // Try public uploads path
-            Path publicPath = Paths.get("../public/uploads", fileName);
-            if (Files.exists(publicPath)) {
-                return publicPath.toAbsolutePath().toString();
-            }
-
-            log.warn("Image file not found for URL: {}", imageUrl);
+            
             return null;
 
         } catch (Exception e) {
@@ -290,6 +382,109 @@ public class MatchingController {
         return 40.0;
     }
 
+    private String saveTemporaryImage(MultipartFile image) {
+        try {
+            // Create uploads directory if it doesn't exist
+            Path uploadsDir = Paths.get("../public/uploads");
+            if (!Files.exists(uploadsDir)) {
+                Files.createDirectories(uploadsDir);
+            }
+
+            // Generate unique filename
+            String originalFilename = image.getOriginalFilename();
+            String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            String uniqueFilename = "search_" + System.currentTimeMillis() + extension;
+            
+            Path filePath = uploadsDir.resolve(uniqueFilename);
+            Files.copy(image.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+            
+            log.info("Saved temporary image to: {}", filePath.toAbsolutePath());
+            return filePath.toAbsolutePath().toString();
+
+        } catch (IOException e) {
+            log.error("Error saving temporary image: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void cleanup(String tempImagePath) {
+        try {
+            if (tempImagePath != null) {
+                Files.deleteIfExists(Paths.get(tempImagePath));
+                log.info("Cleaned up temporary image: {}", tempImagePath);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to cleanup temporary image {}: {}", tempImagePath, e.getMessage());
+        }
+    }
+
+    private List<SearchMatchResult> performImageSearch(String queryImagePath, List<ItemDto> foundItems) {
+        List<SearchMatchResult> results = new ArrayList<>();
+        
+        try {
+            // Prepare image paths for Python script
+            log.info("Preparing image paths for {} found items", foundItems.size());
+            
+            List<String> foundImagePaths = new ArrayList<>();
+            for (ItemDto item : foundItems) {
+                String imagePath = getImagePath(item.getImageUrl());
+                if (imagePath != null) {
+                    foundImagePaths.add(imagePath);
+                    log.info("Added image path for item {}: {} -> {}", item.getId(), item.getImageUrl(), imagePath);
+                } else {
+                    log.warn("Could not resolve image path for item {}: {}", item.getId(), item.getImageUrl());
+                }
+            }
+
+            if (foundImagePaths.isEmpty()) {
+                log.warn("No valid image paths found for search");
+                return results;
+            }
+            
+            log.info("Found {} valid image paths for matching", foundImagePaths.size());
+
+            // Call Python matching service
+            List<ImageMatchResult> pythonResults = callPythonMatchingService(queryImagePath, foundImagePaths);
+
+            // Convert Python results to search match results
+            for (ImageMatchResult pythonResult : pythonResults) {
+                // Find the corresponding found item
+                ItemDto matchedItem = foundItems.stream()
+                        .filter(item -> {
+                            String itemPath = getImagePath(item.getImageUrl());
+                            return itemPath != null && itemPath.equals(pythonResult.imagePath);
+                        })
+                        .findFirst()
+                        .orElse(null);
+
+                if (matchedItem != null && pythonResult.matchCount >= 10) { // Minimum threshold for a potential match
+                    SearchMatchResult searchResult = new SearchMatchResult();
+                    searchResult.itemId = matchedItem.getId();
+                    searchResult.itemName = matchedItem.getName();
+                    searchResult.itemDescription = matchedItem.getDescription();
+                    searchResult.itemImageUrl = matchedItem.getImageUrl();
+                    searchResult.category = matchedItem.getCategory().toString();
+                    searchResult.location = matchedItem.getLocation();
+                    searchResult.reportedAt = matchedItem.getReportedAt();
+                    searchResult.matchScore = pythonResult.matchCount;
+                    searchResult.confidence = calculateConfidence(pythonResult.matchCount);
+                    
+                    results.add(searchResult);
+                    log.info("Found potential match: {} with {} feature matches", 
+                            matchedItem.getName(), pythonResult.matchCount);
+                }
+            }
+
+            // Sort by match score (highest first)
+            results.sort((a, b) -> Integer.compare(b.matchScore, a.matchScore));
+
+        } catch (Exception e) {
+            log.error("Error in image search: {}", e.getMessage(), e);
+        }
+
+        return results;
+    }
+
     // DTOs for matching results
     public static class MatchResult {
         public Long lostItemId;
@@ -299,6 +494,18 @@ public class MatchingController {
         public int matchScore;
         public double confidence;
         public Long reportedByUserId;
+    }
+
+    public static class SearchMatchResult {
+        public Long itemId;
+        public String itemName;
+        public String itemDescription;
+        public String itemImageUrl;
+        public String category;
+        public String location;
+        public java.time.LocalDateTime reportedAt;
+        public int matchScore;
+        public double confidence;
     }
 
     public static class ImageMatchResult {

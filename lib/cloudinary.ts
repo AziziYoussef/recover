@@ -26,12 +26,32 @@ const isCloudinaryConfigured = () => {
  */
 export async function uploadImage(imageBuffer: Buffer, folder = 'lost-found-system') {
   try {
-    // If Cloudinary isn't configured, return a mock response
+    // If Cloudinary isn't configured, save locally
     if (!isCloudinaryConfigured()) {
-      console.warn('Cloudinary is not configured. Using mock response.');
+      console.warn('Cloudinary is not configured. Saving image locally.');
+      
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Create unique filename
+      const timestamp = Date.now();
+      const filename = `image-${timestamp}.jpg`;
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      
+      // Ensure uploads directory exists
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Save file locally
+      const filePath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filePath, imageBuffer);
+      
+      console.log(`Image saved locally to: ${filePath}`);
+      
       return {
-        url: `/mock-image-${Date.now()}.jpg`,
-        publicId: `mock-id-${Date.now()}`,
+        url: `/uploads/${filename}`,
+        publicId: `local-${timestamp}`,
         width: 800,
         height: 600,
       };

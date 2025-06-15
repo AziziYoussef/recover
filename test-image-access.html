@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Image Access</title>
+</head>
+<body>
+    <h1>Testing Image Access</h1>
+    
+    <h2>Direct Static Access (should work with Next.js dev server)</h2>
+    <img src="/uploads/db_image1.jpeg" alt="DB Image 1" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    <img src="/uploads/db_image2.jpeg" alt="DB Image 2" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    <img src="/uploads/db_image3.jpeg" alt="DB Image 3" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    
+    <h2>API Route Access</h2>
+    <img src="/api/images/db_image1.jpeg" alt="DB Image 1 via API" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    <img src="/api/images/db_image2.jpeg" alt="DB Image 2 via API" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    <img src="/api/images/db_image3.jpeg" alt="DB Image 3 via API" style="max-width: 200px; border: 1px solid #ccc; margin: 10px;">
+    
+    <script>
+        // Test image loading
+        const images = document.querySelectorAll('img');
+        images.forEach((img, index) => {
+            img.onload = () => console.log(`Image ${index + 1} loaded successfully:`, img.src);
+            img.onerror = () => console.error(`Image ${index + 1} failed to load:`, img.src);
+        });
+    </script>
+</body>
+</html>

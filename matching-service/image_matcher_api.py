@@ -16,7 +16,7 @@ class EnhancedImageMatcher:
         """Initialize the ORB + FLANN matcher with optimized parameters."""
         # Initialize ORB with more features for better matching
         self.orb = cv2.ORB_create(
-            nfeatures=1000,  # Increase number of features
+            nfeatures=2000,  # Increased from 1000 for more features
             scaleFactor=1.2,
             nlevels=8,
             edgeThreshold=31,
@@ -31,17 +31,17 @@ class EnhancedImageMatcher:
         FLANN_INDEX_LSH = 6
         index_params = dict(
             algorithm=FLANN_INDEX_LSH,
-            table_number=6,
-            key_size=12,
-            multi_probe_level=1
+            table_number=12,  # Increased from 6
+            key_size=20,      # Increased from 12
+            multi_probe_level=2  # Increased from 1
         )
-        search_params = dict(checks=50)
+        search_params = dict(checks=100)  # Increased from 50
         
         self.flann = cv2.FlannBasedMatcher(index_params, search_params)
         
-        # Matching thresholds
-        self.ratio_threshold = 0.75  # Lowe's ratio test threshold
-        self.min_match_count = 10    # Minimum matches for a valid match
+        # Matching thresholds - made more lenient for better identical image detection
+        self.ratio_threshold = 0.9   # More strict ratio for better quality matches
+        self.min_match_count = 4     # Lower minimum for any potential match
         
     def preprocess_image(self, image_path: str) -> Optional[np.ndarray]:
         """
@@ -64,12 +64,15 @@ class EnhancedImageMatcher:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             
             # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            # This improves feature detection in varying lighting conditions
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))  # Increased clipLimit
             enhanced = clahe.apply(gray)
             
-            # Optional: Gaussian blur to reduce noise
-            processed = cv2.GaussianBlur(enhanced, (3, 3), 0)
+            # Apply bilateral filter to reduce noise while preserving edges
+            processed = cv2.bilateralFilter(enhanced, 9, 75, 75)
+            
+            # Optional: Add slight sharpening
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            processed = cv2.filter2D(processed, -1, kernel)
             
             return processed
             
@@ -159,9 +162,9 @@ class EnhancedImageMatcher:
             src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
             dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
             
-            # Find homography and count inliers
+            # Find homography with more lenient RANSAC parameters
             _, mask = cv2.findHomography(src_pts, dst_pts, 
-                                       cv2.RANSAC, 5.0)
+                                       cv2.RANSAC, 8.0)  # Increased threshold from 5.0
             
             inliers = np.sum(mask) if mask is not None else 0
             geometric_consistency = inliers / len(matches) if matches else 0
@@ -170,7 +173,7 @@ class EnhancedImageMatcher:
             if len(src_pts) > 1:
                 hull = cv2.convexHull(src_pts)
                 area = cv2.contourArea(hull)
-                spatial_distribution = min(area / 10000, 1.0)  # Normalize to 0-1
+                spatial_distribution = min(area / 8000, 1.0)  # Decreased from 10000 for more lenient scoring
             else:
                 spatial_distribution = 0.0
             
@@ -269,9 +272,18 @@ class EnhancedImageMatcher:
         print(f"Comparing query image: {query_image_path}")
         print(f"Against {len(database_image_paths)} database images")
         
+        # Debug: Check if query image exists
+        if not os.path.exists(query_image_path):
+            print(f"ERROR: Query image does not exist at path: {query_image_path}")
+            return results
+        
         for db_image_path in database_image_paths:
             print(f"Processing: {db_image_path}")
+            if not os.path.exists(db_image_path):
+                print(f"WARNING: Database image does not exist at path: {db_image_path}")
+                continue
             result = self.compare_images(query_image_path, db_image_path)
+            print(f"Result for {db_image_path}: {result['matches']} matches, confidence: {result['confidence']}%")
             results.append(result)
         
         # Sort by quality score (highest first)
@@ -312,8 +324,14 @@ def main():
     # Output results in format expected by Java backend
     print("\n=== MATCHING RESULTS ===")
     for result in results:
-        if 'error' not in result and result['matches'] >= matcher.min_match_count:
-            print(f"{result['image_path']}:{result['matches']} matches (confidence: {result['confidence']}%)")
+        if 'error' not in result and result['matches'] >= 1:  # Output any result with at least 1 match
+            # Convert to canonical path for Java backend compatibility
+            try:
+                canonical_path = os.path.realpath(result['image_path'])
+                print(f"{canonical_path}:{result['matches']} matches (confidence: {result['confidence']}%)")
+            except Exception as e:
+                # Fallback to original path if canonical conversion fails
+                print(f"{result['image_path']}:{result['matches']} matches (confidence: {result['confidence']}%)")
     
     # Also output detailed JSON for debugging (commented out for production)
     # print(f"\n=== DETAILED RESULTS ===")

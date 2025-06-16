@@ -107,11 +107,16 @@ public class SearchService {
                 candidate.getSnapshotUrl()
             );
 
-            if (similarityScore >= request.getMatchingThreshold()) {
+            // Lower the matching threshold from default to be more lenient
+            double threshold = request.getMatchingThreshold() != null ? 
+                             Math.min(request.getMatchingThreshold(), 0.6) : 0.6;
+
+            if (similarityScore >= threshold) {
                 ImageMatching match = new ImageMatching();
                 match.setSearchRequest(request);
                 match.setDetectedObject(candidate);
                 match.setSimilarityScore(similarityScore);
+                match.setConfidenceLevel(calculateConfidence(similarityScore));
                 matches.add(match);
             }
         }
@@ -130,6 +135,18 @@ public class SearchService {
         // TODO: Implement proper image similarity calculation
         // For now, return a random score for demonstration
         return Math.random();
+    }
+
+    /**
+     * Calculate confidence level based on similarity score
+     */
+    private double calculateConfidence(double similarityScore) {
+        // More lenient confidence calculation
+        if (similarityScore >= 0.9) return 1.0;
+        if (similarityScore >= 0.8) return 0.9;
+        if (similarityScore >= 0.7) return 0.8;
+        if (similarityScore >= 0.6) return 0.7;
+        return similarityScore;
     }
 
     /**

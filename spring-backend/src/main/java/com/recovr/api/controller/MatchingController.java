@@ -30,6 +30,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 @RestController
 @RequestMapping("/api/matching")
@@ -69,42 +72,43 @@ public class MatchingController {
             
             log.info("Saved uploaded image to: {}", tempImagePath);
 
-            // Get all FOUND items from database for comparison
-            List<ItemDto> foundItems = itemService.getItemsByStatus("FOUND");
-            log.info("Found {} found items in database for matching", foundItems.size());
+            // Get all items from database for comparison (search in both LOST and FOUND items)
+            Page<ItemDto> itemsPage = itemService.getAllItems(PageRequest.of(0, 1000), null, null, null);
+            List<ItemDto> allItems = itemsPage.getContent();
+            log.info("Found {} total items in database for matching", allItems.size());
 
-            if (foundItems.isEmpty()) {
+            if (allItems.isEmpty()) {
                 cleanup(tempImagePath);
                 return ResponseEntity.ok(Map.of(
-                    "message", "No found items available for matching",
+                    "message", "No items available for matching",
                     "matches", Collections.emptyList()
                 ));
             }
 
             // Filter items with images only
-            List<ItemDto> foundItemsWithImages = foundItems.stream()
+            List<ItemDto> itemsWithImages = allItems.stream()
                     .filter(item -> item.getImageUrl() != null && !item.getImageUrl().isEmpty())
                     .collect(Collectors.toList());
 
-            if (foundItemsWithImages.isEmpty()) {
+            if (itemsWithImages.isEmpty()) {
                 cleanup(tempImagePath);
                 return ResponseEntity.ok(Map.of(
-                    "message", "No found items with images available for matching",
+                    "message", "No items with images available for matching",
                     "matches", Collections.emptyList()
                 ));
             }
 
-            log.info("Processing image matching against {} found items with images", foundItemsWithImages.size());
+            log.info("Processing image matching against {} items with images", itemsWithImages.size());
 
             // Perform image matching
-            List<SearchMatchResult> matchResults = performImageSearch(tempImagePath, foundItemsWithImages);
+            List<SearchMatchResult> matchResults = performImageSearch(tempImagePath, itemsWithImages);
 
             // Clean up temporary file
             cleanup(tempImagePath);
 
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Image search completed successfully");
-            response.put("foundItemsChecked", foundItemsWithImages.size());
+            response.put("itemsChecked", itemsWithImages.size());
             response.put("matchesFound", matchResults.size());
             response.put("matches", matchResults);
 
@@ -255,8 +259,9 @@ public class MatchingController {
                 log.info("Python output: {}", line);
                 
                 // Parse results line (format: "image_path:match_count matches (confidence: xx%)")
-                if (line.contains(":") && line.contains("matches") && !line.startsWith("Comparing") && !line.startsWith("Processing")) {
-                    String[] parts = line.split(":");
+                if (line.contains(":") && line.contains("matches") && !line.startsWith("Comparing") && !line.startsWith("Processing") && !line.startsWith("Result for")) {
+                    log.info("Parsing potential match line: {}", line);
+                    String[] parts = line.split(":", 2); // Limit to 2 parts to handle Windows paths with colons
                     if (parts.length == 2) {
                         try {
                             String imagePath = parts[0].trim();
@@ -271,10 +276,14 @@ public class MatchingController {
                                 result.matchCount = matchCount;
                                 results.add(result);
                                 log.info("Parsed match result: {} -> {} matches", imagePath, matchCount);
+                            } else {
+                                log.warn("Match line does not have expected format: {}", matchPart);
                             }
                         } catch (NumberFormatException e) {
                             log.warn("Could not parse match count from line: {}", line);
                         }
+                    } else {
+                        log.warn("Line does not split correctly on colon: {}", line);
                     }
                 }
             }
@@ -352,8 +361,15 @@ public class MatchingController {
                 Path imagePath = Paths.get(pathStr);
                 if (Files.exists(imagePath)) {
                     String absolutePath = imagePath.toAbsolutePath().toString();
-                    log.info("Found image at path: {}", absolutePath);
-                    return absolutePath;
+                    try {
+                        // Normalize the path to its real, canonical form
+                        String realPath = imagePath.toRealPath().toString();
+                        log.info("Found image at path: {} (resolved to: {})", absolutePath, realPath);
+                        return realPath;
+                    } catch (IOException ioException) {
+                        log.warn("Could not resolve real path for {}: {}", absolutePath, ioException.getMessage());
+                        return absolutePath; // Fallback to absolute path if real path cannot be resolved
+                    }
                 }
             }
 
@@ -372,14 +388,15 @@ public class MatchingController {
     }
 
     private double calculateConfidence(int matchCount) {
-        // Simple confidence calculation based on feature matches
-        // You can adjust this formula based on your requirements
+        // Improved confidence calculation that better handles identical images
+        if (matchCount >= 100) return 99.0;  // Very high confidence for many matches (likely identical)
         if (matchCount >= 50) return 95.0;
         if (matchCount >= 30) return 85.0;
         if (matchCount >= 20) return 75.0;
         if (matchCount >= 15) return 65.0;
         if (matchCount >= 10) return 55.0;
-        return 40.0;
+        if (matchCount >= 5) return 45.0;
+        return Math.max(matchCount * 5, 20.0);  // Scale smaller match counts
     }
 
     private String saveTemporaryImage(MultipartFile image) {
@@ -418,46 +435,67 @@ public class MatchingController {
         }
     }
 
-    private List<SearchMatchResult> performImageSearch(String queryImagePath, List<ItemDto> foundItems) {
+    private List<SearchMatchResult> performImageSearch(String queryImagePath, List<ItemDto> items) {
         List<SearchMatchResult> results = new ArrayList<>();
         
         try {
             // Prepare image paths for Python script
-            log.info("Preparing image paths for {} found items", foundItems.size());
+            log.info("Preparing image paths for {} items", items.size());
             
-            List<String> foundImagePaths = new ArrayList<>();
-            for (ItemDto item : foundItems) {
+            List<String> imagePaths = new ArrayList<>();
+            for (ItemDto item : items) {
                 String imagePath = getImagePath(item.getImageUrl());
                 if (imagePath != null) {
-                    foundImagePaths.add(imagePath);
+                    imagePaths.add(imagePath);
                     log.info("Added image path for item {}: {} -> {}", item.getId(), item.getImageUrl(), imagePath);
                 } else {
                     log.warn("Could not resolve image path for item {}: {}", item.getId(), item.getImageUrl());
                 }
             }
 
-            if (foundImagePaths.isEmpty()) {
+            if (imagePaths.isEmpty()) {
                 log.warn("No valid image paths found for search");
                 return results;
             }
             
-            log.info("Found {} valid image paths for matching", foundImagePaths.size());
+            log.info("Found {} valid image paths for matching", imagePaths.size());
 
             // Call Python matching service
-            List<ImageMatchResult> pythonResults = callPythonMatchingService(queryImagePath, foundImagePaths);
+            List<ImageMatchResult> pythonResults = callPythonMatchingService(queryImagePath, imagePaths);
+            log.info("Python matching service returned {} results", pythonResults.size());
 
-            // Convert Python results to search match results
+            // Real Python matching logic with debug
+            log.info("Processing {} Python results", pythonResults.size());
             for (ImageMatchResult pythonResult : pythonResults) {
-                // Find the corresponding found item
-                ItemDto matchedItem = foundItems.stream()
+                log.info("Processing Python result: {} with {} matches", pythonResult.imagePath, pythonResult.matchCount);
+                
+                // Find the corresponding item - simple filename-based matching
+                ItemDto matchedItem = items.stream()
                         .filter(item -> {
-                            String itemPath = getImagePath(item.getImageUrl());
-                            return itemPath != null && itemPath.equals(pythonResult.imagePath);
+                            if (item.getImageUrl() == null) return false;
+                            
+                            // Extract filename from both paths for comparison
+                            String itemFilename = Paths.get(item.getImageUrl()).getFileName().toString();
+                            String pythonFilename = Paths.get(pythonResult.imagePath).getFileName().toString();
+                            
+                            boolean matches = itemFilename.equals(pythonFilename);
+                            if (matches) {
+                                log.info("Found match: item {} ({}) matches Python result ({})", 
+                                        item.getId(), itemFilename, pythonFilename);
+                            }
+                            return matches;
                         })
                         .findFirst()
                         .orElse(null);
 
-                if (matchedItem != null && pythonResult.matchCount >= 10) { // Minimum threshold for a potential match
+                if (matchedItem == null) {
+                    log.warn("No matching item found for Python result path: {}", pythonResult.imagePath);
+                } else {
+                    log.info("Found matching item: {} for path: {}", matchedItem.getName(), pythonResult.imagePath);
+                }
+
+                if (matchedItem != null && pythonResult.matchCount >= 1) { // Lowered minimum threshold to 1 for any potential match
+                    log.info("Creating search result for matched item: {} with {} matches", matchedItem.getName(), pythonResult.matchCount);
                     SearchMatchResult searchResult = new SearchMatchResult();
                     searchResult.itemId = matchedItem.getId();
                     searchResult.itemName = matchedItem.getName();

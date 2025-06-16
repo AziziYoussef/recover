@@ -128,7 +128,7 @@ export default function SearchPage() {
         location: match.location,
         date: match.reportedAt ? new Date(match.reportedAt).toISOString().split('T')[0] : 'Unknown Date',
         image: match.itemImageUrl || '/placeholder.svg',
-        matchScore: match.confidence / 100, // Convert to 0-1 scale
+        matchScore: match.confidence / 100, // Convert to 0-1 scale for display
         category: match.category?.toLowerCase() || 'other'
       })) : []
       

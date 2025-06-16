@@ -26,17 +26,25 @@ public class ItemService {
     private final UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(ItemService.class);
 
-    public Page<ItemDto> getAllItems(Pageable pageable, String category, String status) {
+    public Page<ItemDto> getAllItems(Pageable pageable, String query, String category, String status) {
         Specification<Item> spec = Specification.where(null);
         
+        if (query != null && !query.isEmpty()) {
+            String lowerCaseQuery = query.toLowerCase();
+            spec = spec.and((root, q, cb) -> cb.or(
+                cb.like(cb.lower(root.get("name")), "%" + lowerCaseQuery + "%"),
+                cb.like(cb.lower(root.get("description")), "%" + lowerCaseQuery + "%")
+            ));
+        }
+
         if (category != null && !category.isEmpty()) {
             final ItemCategory categoryEnum = ItemCategory.valueOf(category.toUpperCase());
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("category"), categoryEnum));
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("category"), categoryEnum));
         }
         
         if (status != null && !status.isEmpty()) {
             final ItemStatus statusEnum = ItemStatus.valueOf(status.toUpperCase());
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), statusEnum));
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), statusEnum));
         }
         
         return itemRepository.findAll(spec, pageable).map(this::convertToDto);

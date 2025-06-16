@@ -55,27 +55,43 @@ export default function SearchPage() {
 
     setLoading(true)
     setError(null)
+    setResults([])
 
     try {
-      const response = await fetch(`/api/lost-objects?search=${encodeURIComponent(searchTerm)}`)
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+      const params = new URLSearchParams({
+        query: searchTerm,
+        size: "20"
+      })
+      
+      const response = await fetch(`${API_BASE_URL}/api/items/search?${params}`)
       
       if (!response.ok) {
         throw new Error("Failed to search objects")
       }
       
       const data = await response.json()
-      setResults(data.items.map((item: any) => ({
-        id: item.id,
+      console.log("Search API response:", data)
+      
+      const transformedResults = data.items ? data.items.map((item: any) => ({
+        id: item.id.toString(),
         name: item.name,
-        location: item.location,
-        date: item.date,
-        image: item.image,
-        matchScore: 100, // Text search doesn't have match scores
-        category: item.category
-      })))
+        location: item.location || 'Lieu non spécifié',
+        date: item.reportedAt ? new Date(item.reportedAt).toISOString().split('T')[0] : 'Date inconnue',
+        image: item.imageUrl || '/placeholder.svg',
+        matchScore: 1.0, // Text search doesn't have match scores
+        category: item.category?.toLowerCase() || 'other'
+      })) : []
+      
+      setResults(transformedResults)
+      
+      if (transformedResults.length === 0) {
+        setError("Aucun objet trouvé pour votre recherche")
+      }
+      
     } catch (err) {
       console.error("Error searching objects:", err)
-      setError("Failed to search objects. Please try again.")
+      setError("Erreur lors de la recherche. Veuillez réessayer.")
     } finally {
       setLoading(false)
     }

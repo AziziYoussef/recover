@@ -64,24 +64,41 @@ export default function MapPage() {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   
-  // In a real app, fetch from API
+  // Fetch found items from API
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
       
       try {
-        // Simulate API call
-        // In production, replace with real API call:
-        // const response = await fetch('/api/lost-objects?status=found');
-        // const data = await response.json();
-        // setObjects(data.objects);
-        
-        // For now, just simulate a delay
-        setTimeout(() => {
-          setLoading(false)
-        }, 500)
+        const response = await fetch('/api/found')
+        if (response.ok) {
+          const data = await response.json()
+          // Transform the API data to match the expected format
+          const transformedObjects = data.content.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            location: item.location,
+            date: item.reportedAt ? new Date(item.reportedAt).toLocaleDateString() : 'N/A',
+            image: item.imageUrl || '/placeholder.svg?height=100&width=100',
+            category: item.category?.toLowerCase() || 'other',
+            coordinates: {
+              lat: item.latitude || 40.7128,
+              lng: item.longitude || -74.006,
+              x: Math.floor(Math.random() * 500), // Keep for backward compatibility
+              y: Math.floor(Math.random() * 400)
+            }
+          }))
+          setObjects(transformedObjects)
+        } else {
+          console.error('Failed to fetch found items')
+          // Fallback to mock data
+          setObjects(MOCK_OBJECT_LOCATIONS)
+        }
       } catch (error) {
         console.error("Error fetching object locations:", error)
+        // Fallback to mock data
+        setObjects(MOCK_OBJECT_LOCATIONS)
+      } finally {
         setLoading(false)
       }
     }

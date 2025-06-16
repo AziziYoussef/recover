@@ -66,6 +66,109 @@ public class ItemController {
         }
     }
 
+    @GetMapping("/search")
+    public ResponseEntity<?> searchItems(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String sortBy) {
+        try {
+            log.info("Search request - query: '{}', category: '{}', status: '{}', location: '{}', dateFrom: '{}', dateTo: '{}', sortBy: '{}'", 
+                    query, category, status, location, dateFrom, dateTo, sortBy);
+
+            Pageable paging = PageRequest.of(page, size);
+            Page<ItemDto> pageItems = itemService.searchItems(paging, query, category, status, 
+                                                            location, dateFrom, dateTo, sortBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("items", pageItems.getContent());
+            response.put("currentPage", pageItems.getNumber());
+            response.put("totalItems", pageItems.getTotalElements());
+            response.put("totalPages", pageItems.getTotalPages());
+            response.put("hasMore", !pageItems.isLast());
+
+            // Add search metadata
+            Map<String, Object> searchInfo = new HashMap<>();
+            searchInfo.put("query", query);
+            searchInfo.put("filtersApplied", 
+                (category != null && !category.isEmpty()) || 
+                (status != null && !status.isEmpty()) || 
+                (location != null && !location.isEmpty()) || 
+                (dateFrom != null && !dateFrom.isEmpty()) || 
+                (dateTo != null && !dateTo.isEmpty()));
+            response.put("searchInfo", searchInfo);
+
+            log.info("Search completed - found {} items", pageItems.getTotalElements());
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (Exception e) {
+            log.error("Error in search: {}", e.getMessage(), e);
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/lost")
+    public ResponseEntity<?> getLostItems(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String sortBy) {
+        try {
+            Pageable paging = PageRequest.of(page, size);
+            Page<ItemDto> pageItems = itemService.searchItems(paging, query, category, "LOST", 
+                                                            location, dateFrom, dateTo, sortBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("items", pageItems.getContent());
+            response.put("currentPage", pageItems.getNumber());
+            response.put("totalItems", pageItems.getTotalElements());
+            response.put("totalPages", pageItems.getTotalPages());
+            response.put("hasMore", !pageItems.isLast());
+
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (Exception e) {
+            log.error("Error getting lost items: {}", e.getMessage(), e);
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @GetMapping("/found")
+    public ResponseEntity<?> getFoundItems(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String sortBy) {
+        try {
+            Pageable paging = PageRequest.of(page, size);
+            Page<ItemDto> pageItems = itemService.searchItems(paging, query, category, "FOUND", 
+                                                            location, dateFrom, dateTo, sortBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("items", pageItems.getContent());
+            response.put("currentPage", pageItems.getNumber());
+            response.put("totalItems", pageItems.getTotalElements());
+            response.put("totalPages", pageItems.getTotalPages());
+            response.put("hasMore", !pageItems.isLast());
+
+            return new ResponseEntity<>(response, HttpStatus.OK);
+        } catch (Exception e) {
+            log.error("Error getting found items: {}", e.getMessage(), e);
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getItemById(@PathVariable Long id) {
         try {

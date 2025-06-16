@@ -10,7 +10,9 @@ import com.recovr.api.repository.ItemRepository;
 import com.recovr.api.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,27 +29,105 @@ public class ItemService {
     private static final Logger log = LoggerFactory.getLogger(ItemService.class);
 
     public Page<ItemDto> getAllItems(Pageable pageable, String query, String category, String status) {
+        return searchItems(pageable, query, category, status, null, null, null, null);
+    }
+
+    public Page<ItemDto> searchItems(Pageable pageable, String query, String category, String status, 
+                                   String location, String dateFrom, String dateTo, String sortBy) {
         Specification<Item> spec = Specification.where(null);
         
+        // Text search in name, description, and location
         if (query != null && !query.isEmpty()) {
             String lowerCaseQuery = query.toLowerCase();
             spec = spec.and((root, q, cb) -> cb.or(
                 cb.like(cb.lower(root.get("name")), "%" + lowerCaseQuery + "%"),
-                cb.like(cb.lower(root.get("description")), "%" + lowerCaseQuery + "%")
+                cb.like(cb.lower(root.get("description")), "%" + lowerCaseQuery + "%"),
+                cb.like(cb.lower(root.get("location")), "%" + lowerCaseQuery + "%")
             ));
         }
 
-        if (category != null && !category.isEmpty()) {
-            final ItemCategory categoryEnum = ItemCategory.valueOf(category.toUpperCase());
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("category"), categoryEnum));
+        // Category filter
+        if (category != null && !category.isEmpty() && !"ALL".equalsIgnoreCase(category)) {
+            try {
+                final ItemCategory categoryEnum = ItemCategory.valueOf(category.toUpperCase());
+                spec = spec.and((root, q, cb) -> cb.equal(root.get("category"), categoryEnum));
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid category value: {}", category);
+            }
         }
         
-        if (status != null && !status.isEmpty()) {
-            final ItemStatus statusEnum = ItemStatus.valueOf(status.toUpperCase());
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), statusEnum));
+        // Status filter (LOST, FOUND, CLAIMED)
+        if (status != null && !status.isEmpty() && !"ALL".equalsIgnoreCase(status)) {
+            try {
+                final ItemStatus statusEnum = ItemStatus.valueOf(status.toUpperCase());
+                spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), statusEnum));
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid status value: {}", status);
+            }
         }
+
+        // Location filter
+        if (location != null && !location.isEmpty()) {
+            String lowerCaseLocation = location.toLowerCase();
+            spec = spec.and((root, q, cb) -> 
+                cb.like(cb.lower(root.get("location")), "%" + lowerCaseLocation + "%")
+            );
+        }
+
+        // Date range filter
+        if (dateFrom != null && !dateFrom.isEmpty()) {
+            try {
+                LocalDateTime fromDate = LocalDateTime.parse(dateFrom + "T00:00:00");
+                spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("reportedAt"), fromDate));
+            } catch (Exception e) {
+                log.warn("Invalid dateFrom format: {}", dateFrom);
+            }
+        }
+
+        if (dateTo != null && !dateTo.isEmpty()) {
+            try {
+                LocalDateTime toDate = LocalDateTime.parse(dateTo + "T23:59:59");
+                spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("reportedAt"), toDate));
+            } catch (Exception e) {
+                log.warn("Invalid dateTo format: {}", dateTo);
+            }
+        }
+
+        // Apply sorting
+        Pageable sortedPageable = applySorting(pageable, sortBy);
         
-        return itemRepository.findAll(spec, pageable).map(this::convertToDto);
+        return itemRepository.findAll(spec, sortedPageable).map(this::convertToDto);
+    }
+
+    private Pageable applySorting(Pageable pageable, String sortBy) {
+        if (sortBy == null || sortBy.isEmpty()) {
+            return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), 
+                                Sort.by("reportedAt").descending());
+        }
+
+        Sort sort;
+        switch (sortBy.toLowerCase()) {
+            case "name":
+                sort = Sort.by("name").ascending();
+                break;
+            case "date_asc":
+                sort = Sort.by("reportedAt").ascending();
+                break;
+            case "date_desc":
+            case "newest":
+                sort = Sort.by("reportedAt").descending();
+                break;
+            case "category":
+                sort = Sort.by("category").ascending().and(Sort.by("reportedAt").descending());
+                break;
+            case "location":
+                sort = Sort.by("location").ascending().and(Sort.by("reportedAt").descending());
+                break;
+            default:
+                sort = Sort.by("reportedAt").descending();
+        }
+
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
     public ItemDto getItemById(Long id) {
@@ -123,6 +203,8 @@ public class ItemService {
             item.setStatus(dto.getStatus());
             item.setLocation(dto.getLocation());
             item.setImageUrl(dto.getImageUrl());
+            item.setLatitude(dto.getLatitude());
+            item.setLongitude(dto.getLongitude());
         } catch (Exception e) {
             log.error("Error in updateItemFromDto: ", e);
             throw e;
@@ -138,6 +220,8 @@ public class ItemService {
         dto.setStatus(item.getStatus());
         dto.setLocation(item.getLocation());
         dto.setImageUrl(item.getImageUrl());
+        dto.setLatitude(item.getLatitude());
+        dto.setLongitude(item.getLongitude());
         
         if (item.getReportedBy() != null) {
             dto.setReportedById(item.getReportedBy().getId());

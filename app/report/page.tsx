@@ -19,6 +19,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format } from "date-fns"
 import { CalendarIcon, MapPin, Upload, Loader2, X } from "lucide-react"
 import { PageContainer } from "@/components/page-container"
+import dynamic from "next/dynamic"
+
+const LocationPicker = dynamic(() => import("@/components/ui/location-picker"), { ssr: false })
 
 // Form validation schema
 const reportSchema = z.object({
@@ -43,6 +46,8 @@ export default function ReportPage() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [selectedLocation, setSelectedLocation] = useState<{latitude: number, longitude: number, address: string} | null>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const { register, handleSubmit, setValue, formState: { errors }, reset } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
@@ -126,11 +131,16 @@ export default function ReportPage() {
       // Format date for submission
       const formattedDate = format(data.date, "yyyy-MM-dd")
 
-      // Prepare coordinates (in a real app, this would be from a map picker)
-      const coordinates = {
-        x: Math.floor(Math.random() * 500), // Mock coordinates for demo
+      // Use selected location coordinates or defaults
+      const coordinates = selectedLocation ? {
+        lat: selectedLocation.latitude,
+        lng: selectedLocation.longitude,
+        x: Math.floor(Math.random() * 500), // Keep for backward compatibility
+        y: Math.floor(Math.random() * 400)
+      } : {
+        x: Math.floor(Math.random() * 500),
         y: Math.floor(Math.random() * 400),
-        lat: 40.7128 + (Math.random() * 0.01), // Mock NYC area coordinates
+        lat: 40.7128 + (Math.random() * 0.01),
         lng: -74.006 + (Math.random() * 0.01)
       }
 
@@ -298,13 +308,38 @@ export default function ReportPage() {
                       placeholder="e.g., Library, 2nd Floor"
                       className="flex-1"
                       {...register("location")}
+                      value={selectedLocation ? selectedLocation.address : ""}
+                      onChange={(e) => {
+                        if (!selectedLocation) {
+                          setValue("location", e.target.value)
+                        }
+                      }}
                     />
-                    <Button type="button" variant="outline" size="icon" title="Pick location on map">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="icon" 
+                      title="Pick location on map"
+                      onClick={() => setShowLocationPicker(!showLocationPicker)}
+                    >
                       <MapPin className="h-4 w-4" />
                     </Button>
                   </div>
                   {errors.location && (
                     <p className="text-sm text-destructive">{errors.location.message}</p>
+                  )}
+                  
+                  {showLocationPicker && (
+                    <div className="mt-4">
+                      <LocationPicker
+                        onLocationSelect={(location) => {
+                          setSelectedLocation(location)
+                          setValue("location", location.address)
+                          setShowLocationPicker(false)
+                        }}
+                        placeholder="Cliquez sur la carte pour sélectionner le lieu où vous avez trouvé l'objet"
+                      />
+                    </div>
                   )}
                 </div>
 

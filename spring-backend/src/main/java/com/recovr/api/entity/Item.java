@@ -41,6 +41,12 @@ public class Item {
     @Column(name = "image_url")
     private String imageUrl;
 
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     @ManyToOne
     @JoinColumn(name = "reported_by_id", nullable = true)
     private User reportedBy;

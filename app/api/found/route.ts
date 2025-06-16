@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+// GET /api/found - Get found items
+export async function GET(request: NextRequest) {
+  try {
+    // Get search parameters from the request
+    const searchParams = request.nextUrl.searchParams;
+    const query = searchParams.get('query');
+    const category = searchParams.get('category');
+    const location = searchParams.get('location');
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+    const sortBy = searchParams.get('sortBy');
+    const page = searchParams.get('page') || '0';
+    const size = searchParams.get('size') || '20';
+    
+    // Build the API URL with query parameters
+    let url = `${API_BASE_URL}/api/items/found?page=${page}&size=${size}`;
+    if (query) url += `&query=${encodeURIComponent(query)}`;
+    if (category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
+    if (location) url += `&location=${encodeURIComponent(location)}`;
+    if (dateFrom) url += `&dateFrom=${encodeURIComponent(dateFrom)}`;
+    if (dateTo) url += `&dateTo=${encodeURIComponent(dateTo)}`;
+    if (sortBy) url += `&sortBy=${encodeURIComponent(sortBy)}`;
+
+    console.log(`Fetching found items from backend URL: ${url}`);
+    
+    // Fetch data from Spring Boot backend
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      console.error(`API responded with status: ${response.status}`);
+      return NextResponse.json(
+        { error: `API responded with status: ${response.status}` },
+        { status: 500 }
+      );
+    }
+
+    const data = await response.json();
+    console.log('Found items data received from backend:', data);
+    
+    return NextResponse.json({
+      content: data.items || [],
+      totalElements: data.totalItems || 0,
+      totalPages: data.totalPages || 0,
+      currentPage: data.currentPage || 0,
+      hasMore: data.hasMore || false
+    });
+  } catch (error) {
+    console.error('Error fetching found items:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch found items' },
+      { status: 500 }
+    );
+  }
+}

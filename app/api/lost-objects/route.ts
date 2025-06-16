@@ -110,10 +110,12 @@ export async function POST(request: Request) {
       name: data.name,
       description: data.description || '',
       category: mapCategoryToBackend(data.category),
-      type: 'FOUND', // Default to FOUND for reports
+      type: 'FOUND', // Default to FOUND for reports (this is for found items)
       status: 'FOUND',
       location: data.location,
-      imageUrl: data.image || null
+      imageUrl: data.image || null,
+      latitude: data.coordinates?.lat || null,
+      longitude: data.coordinates?.lng || null
     }
 
     console.log('Forwarding to Spring Boot backend:', backendData)

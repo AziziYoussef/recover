@@ -155,7 +155,12 @@ public class ItemService {
         updateItemFromDto(item, itemDto);
         item.setReportedBy(user);
         item.setReportedAt(LocalDateTime.now());
-        item.setStatus(ItemStatus.FOUND);
+        // Set status based on the provided status or default to FOUND
+        if (itemDto.getStatus() != null) {
+            item.setStatus(itemDto.getStatus());
+        } else {
+            item.setStatus(ItemStatus.FOUND);
+        }
         Item savedItem = itemRepository.save(item);
         return convertToDto(savedItem);
     }

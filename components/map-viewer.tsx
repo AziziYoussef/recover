@@ -11,6 +11,9 @@ interface MapObject {
   date: string
   image: string
   category: string
+  description: string
+  reportedBy: string
+  status: string
   coordinates: {
     lat: number
     lng: number
@@ -33,11 +36,22 @@ const MapWithNoSSRComponent = dynamic(
 )
 
 // This component will only be rendered on the client side
-const MapViewer = ({ objects }: { objects: MapObject[] }) => {
-  // No need for state to manage keys, as we've fixed the underlying issue
+const MapViewer = ({ 
+  objects, 
+  selectedObject, 
+  onObjectSelect 
+}: { 
+  objects: MapObject[]
+  selectedObject?: MapObject | null
+  onObjectSelect?: (object: MapObject) => void
+}) => {
   return (
     <div className="w-full h-full">
-      <MapWithNoSSRComponent objects={objects} />
+      <MapWithNoSSRComponent 
+        objects={objects} 
+        selectedObject={selectedObject}
+        onObjectSelect={onObjectSelect}
+      />
     </div>
   )
 }

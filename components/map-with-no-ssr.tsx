@@ -5,6 +5,28 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Button } from '@/components/ui/button'
 
+// Add custom styles for better popup formatting
+const customStyles = `
+  .custom-popup .leaflet-popup-content {
+    margin: 8px 12px !important;
+    line-height: 1.4 !important;
+  }
+  .custom-popup .leaflet-popup-content-wrapper {
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+  .custom-popup .leaflet-popup-tip {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  }
+`
+
+// Inject custom styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style')
+  styleSheet.innerText = customStyles
+  document.head.appendChild(styleSheet)
+}
+
 // Fix the default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -100,20 +122,23 @@ const MapWithNoSSR = ({ objects, selectedObject, onObjectSelect }: MapWithNoSSRP
         const marker = L.marker([obj.coordinates.lat, obj.coordinates.lng], { icon: markerIcon })
           .addTo(map)
           .bindPopup(`
-            <div class="flex flex-col items-center p-2 min-w-[200px]">
+            <div class="flex flex-col items-center p-3 w-64 max-w-64">
               <img 
                 src="${obj.image}" 
                 alt="${obj.name}"
-                class="w-20 h-20 object-cover my-2 rounded" 
+                class="w-16 h-16 object-cover my-2 rounded border" 
               />
-              <h4 class="font-medium text-center">${obj.name}</h4>
-              <div class="text-xs text-gray-600 text-center">${obj.location}</div>
+              <h4 class="font-medium text-center text-sm mb-1 break-words">${obj.name}</h4>
+              <div class="text-xs text-gray-600 text-center mb-1 break-words">${obj.location}</div>
               <div class="text-xs text-gray-500 text-center">${obj.status === 'LOST' ? 'Lost' : 'Found'} on: ${obj.date}</div>
-              <div class="text-xs text-gray-500 text-center">Reported by: ${obj.reportedBy}</div>
-              <div class="text-xs font-medium text-center ${obj.status === 'LOST' ? 'text-red-600' : 'text-green-600'}">${obj.status}</div>
-              <div class="text-xs text-gray-600 text-center mt-1 max-w-[180px]">${obj.description}</div>
+              <div class="text-xs text-gray-500 text-center">By: ${obj.reportedBy}</div>
+              <div class="text-xs font-medium text-center px-2 py-1 mt-1 rounded-full ${obj.status === 'LOST' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">${obj.status}</div>
+              <div class="text-xs text-gray-600 text-center mt-2 leading-relaxed break-words overflow-hidden" style="max-height: 60px; overflow-y: auto; word-wrap: break-word; white-space: normal;">${obj.description.length > 100 ? obj.description.substring(0, 100) + '...' : obj.description}</div>
             </div>
-          `);
+          `, {
+            maxWidth: 280,
+            className: 'custom-popup'
+          });
 
         // Add click handler for marker selection
         marker.on('click', () => {

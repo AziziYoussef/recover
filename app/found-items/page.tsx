@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, Search as SearchIcon, Calendar, MapPin, User, Eye, CheckCircle } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
 import AdvancedSearch from "@/components/ui/advanced-search"
 
 interface FoundItem {
@@ -284,9 +285,11 @@ export default function FoundItemsPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1" size="sm">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Détails
+                    <Button variant="outline" className="flex-1" size="sm" asChild>
+                      <Link href={`/items/${item.id}`}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Détails
+                      </Link>
                     </Button>
                     {!item.claimed && (
                       <Button className="flex-1" size="sm">

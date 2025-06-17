@@ -49,6 +49,19 @@ export const authOptions: AuthOptions = {
         }
 
         try {
+          // Temporary admin login for development
+          if (credentials.email === 'admin@recovr.com' && credentials.password === 'admin123') {
+            return {
+              id: '1',
+              name: 'System Administrator',
+              email: 'admin@recovr.com',
+              role: 'admin',
+              roles: ['ROLE_ADMIN'],
+              accessToken: 'dev-admin-token',
+              image: null
+            }
+          }
+
           // Call Spring Boot backend for authentication
           const response = await fetch(`${BACKEND_URL}/api/auth/signin`, {
             method: 'POST',
@@ -83,6 +96,20 @@ export const authOptions: AuthOptions = {
           return null
         } catch (error) {
           console.error('Auth error:', error)
+          
+          // Fallback admin login if backend is not available
+          if (credentials.email === 'admin@recovr.com' && credentials.password === 'admin123') {
+            return {
+              id: '1',
+              name: 'System Administrator',
+              email: 'admin@recovr.com',
+              role: 'admin',
+              roles: ['ROLE_ADMIN'],
+              accessToken: 'dev-admin-token',
+              image: null
+            }
+          }
+          
           return null
         }
       },

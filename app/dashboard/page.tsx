@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -7,9 +8,30 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { User, Mail, Phone, Calendar, Settings } from "lucide-react"
 import Link from "next/link"
+import EditProfileModal from "@/components/edit-profile-modal"
+import SimpleProfileModal from "@/components/simple-profile-modal"
+import UltraSimpleModal from "@/components/ultra-simple-modal"
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [userProfile, setUserProfile] = useState(null)
+
+  // Load saved profile from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('userProfile')
+      if (saved) {
+        try {
+          const profile = JSON.parse(saved)
+          console.log("📱 Loaded profile from localStorage:", profile)
+          setUserProfile(profile)
+        } catch (e) {
+          console.error("Error parsing saved profile:", e)
+        }
+      }
+    }
+  }, [])
 
   if (status === "loading") {
     return (
@@ -25,12 +47,15 @@ export default function DashboardPage() {
     redirect("/auth/signin")
   }
 
+  // Debug session data
+  console.log("Dashboard session data:", session)
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-2">
-          Welcome back, {session.user?.name}! Manage your profile and view your activity.
+          Welcome back, {userProfile?.name || session.user?.name}! Manage your profile and view your activity.
         </p>
       </div>
 
@@ -50,7 +75,10 @@ export default function DashboardPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Name</label>
-                <p className="text-sm">{session.user?.name || "Not provided"}</p>
+                <p className="text-sm">{userProfile?.name || session.user?.name || "Not provided"}</p>
+                {userProfile && (
+                  <p className="text-xs text-green-600">✅ Updated profile</p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Email</label>
@@ -76,7 +104,11 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="pt-4">
-              <Button variant="outline" size="sm">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setIsEditProfileOpen(true)}
+              >
                 <Settings className="mr-2 h-4 w-4" />
                 Edit Profile
               </Button>
@@ -152,6 +184,12 @@ export default function DashboardPage() {
           </Card>
         )}
       </div>
+
+      {/* Edit Profile Modal */}
+      <UltraSimpleModal
+        open={isEditProfileOpen}
+        onOpenChange={setIsEditProfileOpen}
+      />
     </div>
   )
 }

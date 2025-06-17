@@ -93,6 +93,10 @@ public class WebSecurityConfig {
                 // Claim requests - require authentication
                 .requestMatchers("/api/claims/**").authenticated()
                 
+                // Profile update by email - public (for frontend integration)
+                .requestMatchers(HttpMethod.PUT, "/api/user/profile-by-email").permitAll()
+                .requestMatchers(HttpMethod.PUT, "/api/user/profile-test").permitAll()
+                
                 // User profile - require authentication
                 .requestMatchers("/api/user/**").authenticated()
                 
@@ -137,7 +141,7 @@ public class WebSecurityConfig {
         
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
+        configuration.setAllowCredentials(false);
         configuration.setExposedHeaders(Arrays.asList("Authorization"));
         configuration.setMaxAge(3600L); // Cache preflight response for 1 hour
         

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, Package, Calendar, MapPin, User, Eye } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
 import AdvancedSearch from "@/components/ui/advanced-search"
 
 interface LostItem {
@@ -39,6 +40,16 @@ export default function LostItemsPage() {
   const [totalItems, setTotalItems] = useState(0)
   const [hasMore, setHasMore] = useState(false)
 
+  const [currentFilters, setCurrentFilters] = useState<SearchFilters>({
+    query: "",
+    category: "ALL",
+    status: "LOST",
+    location: "",
+    dateFrom: "",
+    dateTo: "",
+    sortBy: "newest"
+  })
+
   const searchLostItems = async (filters: SearchFilters, page = 0, append = false) => {
     setLoading(true)
     setError(null)
@@ -48,15 +59,15 @@ export default function LostItemsPage() {
         page: page.toString(),
         size: "12",
         ...(filters.query && { query: filters.query }),
-        ...(filters.category !== "ALL" && { category: filters.category }),
+        ...(filters.category !== "ALL" && filters.category !== "all" && { category: filters.category }),
         ...(filters.location && { location: filters.location }),
         ...(filters.dateFrom && { dateFrom: filters.dateFrom }),
         ...(filters.dateTo && { dateTo: filters.dateTo }),
         ...(filters.sortBy && { sortBy: filters.sortBy })
       })
 
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-      const response = await fetch(`${API_BASE_URL}/api/items/lost?${params}`)
+      // Use our frontend API route instead of calling backend directly
+      const response = await fetch(`/api/lost?${params}`)
 
       if (!response.ok) {
         throw new Error(`Erreur ${response.status}: Impossible de charger les objets perdus`)
@@ -64,16 +75,34 @@ export default function LostItemsPage() {
 
       const data = await response.json()
       
+      // Transform the data to match the expected format
+      const transformedItems = data.content.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        category: item.category || 'MISCELLANEOUS',
+        location: item.location,
+        imageUrl: item.imageUrl || '/placeholder.svg',
+        reportedAt: item.reportedAt,
+        reportedByUsername: item.reportedByUsername || 'Anonymous',
+        claimed: item.status === 'CLAIMED',
+        latitude: item.latitude,
+        longitude: item.longitude
+      }))
+      
       if (append) {
-        setItems(prev => [...prev, ...data.items])
+        setItems(prev => [...prev, ...transformedItems])
       } else {
-        setItems(data.items)
+        setItems(transformedItems)
       }
       
-      setCurrentPage(data.currentPage)
-      setTotalPages(data.totalPages)
-      setTotalItems(data.totalItems)
-      setHasMore(data.hasMore)
+      setCurrentPage(data.currentPage || 0)
+      setTotalPages(data.totalPages || 1)
+      setTotalItems(data.totalElements || transformedItems.length)
+      setHasMore(data.hasMore || false)
+
+      // Store current filters for load more functionality
+      setCurrentFilters(filters)
 
     } catch (err) {
       console.error("Error fetching lost items:", err)
@@ -103,15 +132,7 @@ export default function LostItemsPage() {
 
   const handleLoadMore = () => {
     const nextPage = currentPage + 1
-    searchLostItems({
-      query: "",
-      category: "ALL", 
-      status: "LOST",
-      location: "",
-      dateFrom: "",
-      dateTo: "",
-      sortBy: "newest"
-    }, nextPage, true)
+    searchLostItems(currentFilters, nextPage, true)
   }
 
   const formatDate = (dateString: string) => {
@@ -126,6 +147,7 @@ export default function LostItemsPage() {
   }
 
   const getCategoryColor = (category: string) => {
+    const normalizedCategory = category?.toUpperCase() || 'MISCELLANEOUS'
     const colors: Record<string, string> = {
       ELECTRONICS: "bg-blue-100 text-blue-800",
       CLOTHING: "bg-purple-100 text-purple-800",
@@ -136,12 +158,17 @@ export default function LostItemsPage() {
       JEWELRY: "bg-pink-100 text-pink-800",
       BOOKS: "bg-indigo-100 text-indigo-800",
       SPORTS: "bg-orange-100 text-orange-800",
-      MISCELLANEOUS: "bg-slate-100 text-slate-800"
+      MISCELLANEOUS: "bg-slate-100 text-slate-800",
+      BAG: "bg-green-100 text-green-800", // Handle frontend format
+      ACCESSORY: "bg-yellow-100 text-yellow-800",
+      DOCUMENT: "bg-red-100 text-red-800",
+      OTHER: "bg-slate-100 text-slate-800"
     }
-    return colors[category] || "bg-gray-100 text-gray-800"
+    return colors[normalizedCategory] || "bg-gray-100 text-gray-800"
   }
 
   const getCategoryLabel = (category: string) => {
+    const normalizedCategory = category?.toUpperCase() || 'MISCELLANEOUS'
     const labels: Record<string, string> = {
       ELECTRONICS: "Électronique",
       CLOTHING: "Vêtements", 
@@ -152,9 +179,13 @@ export default function LostItemsPage() {
       JEWELRY: "Bijoux",
       BOOKS: "Livres",
       SPORTS: "Sport",
-      MISCELLANEOUS: "Divers"
+      MISCELLANEOUS: "Divers",
+      BAG: "Sacs", // Handle frontend format
+      ACCESSORY: "Accessoires",
+      DOCUMENT: "Documents",
+      OTHER: "Divers"
     }
-    return labels[category] || category
+    return labels[normalizedCategory] || normalizedCategory
   }
 
   return (
@@ -280,9 +311,11 @@ export default function LostItemsPage() {
                     </div>
                   </div>
 
-                  <Button variant="outline" className="w-full" size="sm">
-                    <Eye className="h-4 w-4 mr-2" />
-                    Voir les détails
+                  <Button variant="outline" className="w-full" size="sm" asChild>
+                    <Link href={`/items/${item.id}`}>
+                      <Eye className="h-4 w-4 mr-2" />
+                      Voir les détails
+                    </Link>
                   </Button>
                 </CardContent>
               </Card>

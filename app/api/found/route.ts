@@ -2,6 +2,28 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+// Map frontend category format to backend format
+function mapCategoryToBackend(category: string): string {
+  const categoryMap: Record<string, string> = {
+    'electronics': 'ELECTRONICS',
+    'clothing': 'CLOTHING', 
+    'bag': 'BAGS',
+    'bags': 'BAGS',
+    'accessory': 'ACCESSORIES',
+    'accessories': 'ACCESSORIES',
+    'document': 'DOCUMENTS',
+    'documents': 'DOCUMENTS',
+    'keys': 'KEYS',
+    'jewelry': 'JEWELRY',
+    'books': 'BOOKS',
+    'sports': 'SPORTS',
+    'other': 'MISCELLANEOUS',
+    'miscellaneous': 'MISCELLANEOUS'
+  };
+  
+  return categoryMap[category.toLowerCase()] || category.toUpperCase();
+}
+
 // GET /api/found - Get found items
 export async function GET(request: NextRequest) {
   try {
@@ -16,10 +38,14 @@ export async function GET(request: NextRequest) {
     const page = searchParams.get('page') || '0';
     const size = searchParams.get('size') || '20';
     
+    // Normalize category format for backend
+    const normalizedCategory = category && category !== 'all' && category !== 'ALL' ? 
+      mapCategoryToBackend(category) : null;
+
     // Build the API URL with query parameters
     let url = `${API_BASE_URL}/api/items/found?page=${page}&size=${size}`;
     if (query) url += `&query=${encodeURIComponent(query)}`;
-    if (category && category !== 'all') url += `&category=${encodeURIComponent(category)}`;
+    if (normalizedCategory) url += `&category=${encodeURIComponent(normalizedCategory)}`;
     if (location) url += `&location=${encodeURIComponent(location)}`;
     if (dateFrom) url += `&dateFrom=${encodeURIComponent(dateFrom)}`;
     if (dateTo) url += `&dateTo=${encodeURIComponent(dateTo)}`;
